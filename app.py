@@ -28,7 +28,7 @@ def upload_foto_ftp(caminho_local, nome_arquivo):
         ftp.login(user=ftp_user, passwd=ftp_pass)
         
         # Caminho absoluto confirmado
-        ftp.cwd('fotos_registro')
+        ftp.cwd('./fotos_registro')
         
         with open(caminho_local, 'rb') as f:
             ftp.storbinary(f'STOR {nome_arquivo}', f)
