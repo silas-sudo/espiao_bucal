@@ -7,173 +7,189 @@ from datetime import datetime
 from PIL import Image
 import io
 
-# --- 1. CONFIGURAÇÃO E ESTILO (UI/UX) ---
-st.set_page_config(page_title="Espião Bucal - Sistema de Monitoramento", layout="wide", page_icon="🦷")
+# --- 1. CONFIGURAÇÕES DE INTERFACE E TEMA (UI/UX) ---
+st.set_page_config(
+    page_title="Espião Bucal - Monitoramento de Produção",
+    layout="wide",
+    page_icon="🦷",
+    initial_sidebar_state="expanded"
+)
 
+# Estilização CSS para garantir que o Frontend fique alinhado
 st.markdown("""
     <style>
-    .main { background-color: #f8f9fa; }
+    .main { background-color: #f0f2f6; }
     .stApp { max-width: 1200px; margin: 0 auto; }
-    .stButton>button { width: 100%; border-radius: 8px; height: 3em; background-color: #1e3a8a; color: white; font-weight: bold; }
-    .stCamera { border: 3px solid #1e3a8a; border-radius: 15px; }
-    .header-box { padding: 20px; background-color: #ffffff; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
+    .stButton>button { width: 100%; border-radius: 10px; height: 3.5em; background-color: #1e3a8a; color: white; font-weight: bold; transition: 0.3s; }
+    .stButton>button:hover { background-color: #2563eb; border: 1px solid #1e3a8a; }
+    .stCamera { border: 4px solid #1e3a8a; border-radius: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    .css-1kyx0rg { border-radius: 15px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. GESTÃO DE SESSÃO (PREVINE ERROS DE VARIÁVEL NULA) ---
-session_vars = {'logado': False, 'usuario': None, 'user_id': None, 'nivel': 'comum'}
-for var, val in session_vars.items():
-    if var not in st.session_state:
-        st.session_state[var] = val
+# --- 2. GESTÃO DE ESTADO GLOBAL (PREVENÇÃO DE BUGS DE VARIÁVEL) ---
+# Inicializamos todas as chaves para evitar o erro 'usuario' ou 'user_id' não definidos
+chaves_sessao = {
+    'logado': False, 
+    'usuario': None, 
+    'user_id': None, 
+    'perfil': 'user', 
+    'ultimo_envio': None
+}
 
-# --- 3. FUNÇÕES DE INFRAESTRUTURA (BACKEND) ---
+for chave, valor in chaves_sessao.items():
+    if chave not in st.session_state:
+        st.session_state[chave] = valor
+
+# --- 3. CAMADA DE CONEXÃO E INFRAESTRUTURA ---
 
 def conectar_banco():
-    """Gerencia a conexão com o MySQL da HostGator"""
+    """Conecta ao MySQL HostGator com validação de credenciais do Secrets"""
     try:
-        c = st.secrets["mysql"]
+        conf = st.secrets["mysql"]
         conn = mysql.connector.connect(
-            host=c["host"], port=c["port"], database=c["database"],
-            user=c["user"], password=c["password"], 
-            autocommit=True, connection_timeout=15
+            host=conf["host"],
+            port=conf["port"],
+            database=conf["database"],
+            user=conf["user"],
+            password=conf["password"],
+            autocommit=True,
+            connection_timeout=20
         )
         return conn
     except Exception as e:
-        st.sidebar.error(f"Erro de Banco: {e}")
+        st.sidebar.error(f"Falha na infraestrutura de dados: {e}")
         return None
 
-def upload_ftp_producao(caminho_local, nome_arquivo):
-    """Executa o upload via FTP com Modo Passivo ativado"""
+def processar_e_enviar_ftp(foto_buffer, nome_final):
+    """Realiza o processamento da imagem e o upload via FTP Passivo"""
     try:
+        # 1. Processamento da imagem com PIL (Otimização de banda)
+        imagem = Image.open(foto_buffer)
+        img_byte_arr = io.BytesIO()
+        imagem.save(img_byte_arr, format='JPEG', quality=80)
+        img_byte_arr = img_byte_arr.getvalue()
+
+        # 2. Conexão FTP (Configuração para usuários 'enjaulados')
         ftp = ftplib.FTP("69.49.241.31")
         ftp.login("espiao@francotec.com.br", "Helena@!*2026")
         ftp.set_pasv(True)
         
-        # Lógica de diretório adaptativa
-        try:
-            ftp.cwd('/public_html/fotos_registro')
-        except:
-            ftp.cwd('fotos_registro')
-            
-        with open(caminho_local, 'rb') as f:
-            ftp.storbinary(f'STOR {nome_arquivo}', f)
-        
+        # Como o usuário 'espiao' já inicia na pasta 'fotos_registro', 
+        # enviamos diretamente sem o comando CWD para evitar erro 550
+        ftp.storbinary(f'STOR {nome_final}', io.BytesIO(img_byte_arr))
         ftp.quit()
         return True
     except Exception as e:
-        st.error(f"Erro de comunicação FTP: {e}")
+        st.error(f"Erro Crítico no Upload: {e}")
         return False
 
-# --- 4. LÓGICA DE NEGÓCIO E TELAS ---
+# --- 4. MÓDULOS DE INTERFACE (FRONTEND) ---
 
-def tela_login():
-    """Interface de autenticação centralizada"""
+def tela_autenticacao():
+    """Renderiza o formulário de login centralizado"""
     st.markdown("<h1 style='text-align: center; color: #1e3a8a;'>🦷 Espião Bucal</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center;'>Sistema de Monitoramento Ortodôntico</p>", unsafe_allow_html=True)
     
-    col1, col2, col3 = st.columns([1, 1.5, 1])
-    with col2:
-        with st.form("auth_form"):
-            st.markdown("### Acesso Restrito")
-            user_input = st.text_input("Usuário").strip()
-            pass_input = st.text_input("Senha", type="password")
-            btn_entrar = st.form_submit_button("Entrar no Sistema")
+    col_l, col_c, col_r = st.columns([1, 1.8, 1])
+    with col_c:
+        with st.form("login_center"):
+            st.subheader("Acesso ao Painel")
+            u_input = st.text_input("Usuário de Acesso").strip()
+            p_input = st.text_input("Senha Segura", type="password")
+            btn_submit = st.form_submit_button("Entrar")
             
-            if btn_entrar:
+            if btn_submit:
                 db = conectar_banco()
                 if db:
                     cursor = db.cursor(dictionary=True)
-                    # SQL Defensivo para evitar erros de coluna
-                    cursor.execute("SELECT * FROM usuarios WHERE usuario = %s AND senha = %s", (user_input, pass_input))
-                    user_data = cursor.fetchone()
+                    # Tabelas e colunas validadas no seu HeidiSQL
+                    query = "SELECT id, usuario, perfil FROM usuarios WHERE usuario = %s AND senha = %s"
+                    cursor.execute(query, (u_input, p_input))
+                    resultado = cursor.fetchone()
                     
-                    if user_data:
+                    if resultado:
                         st.session_state.update({
-                            'logado': True, 'usuario': user_data['usuario'],
-                            'user_id': user_data['id'], 'nivel': user_data.get('nivel', 'comum')
+                            'logado': True,
+                            'usuario': resultado['usuario'],
+                            'user_id': resultado['id'],
+                            'perfil': resultado['perfil']
                         })
                         st.rerun()
                     else:
-                        st.error("Credenciais inválidas ou conta inativa.")
+                        st.error("Usuário ou senha inválidos.")
                     db.close()
 
-def dashboard_usuario():
-    """Painel principal do cliente/usuário"""
-    # Header de Boas-vindas
-    with st.container():
-        c1, c2 = st.columns([4, 1])
-        c1.markdown(f"## Bem-vindo, {st.session_state['usuario']} ✨")
-        if c2.button("Sair do Sistema"):
+def painel_principal():
+    """Dashboard de produção com abas e lógica de histórico"""
+    # Barra lateral de controle
+    with st.sidebar:
+        st.title("Menu")
+        st.info(f"Usuário: {st.session_state['usuario']}")
+        st.caption(f"Perfil: {st.session_state['perfil'].upper()}")
+        if st.button("Encerrar Sessão"):
             st.session_state.clear()
             st.rerun()
-    
-    st.write("---")
-    tab_reg, tab_hist, tab_info = st.tabs(["📸 Registrar Uso", "📅 Meu Histórico", "ℹ️ Informações"])
+        st.divider()
+        st.caption("Suporte: francotec.com.br")
 
-    with tab_reg:
-        st.markdown("### Captura de Monitoramento")
-        col_c, col_t = st.columns([2, 1])
+    # Área de Conteúdo
+    st.title(f"Bem-vindo(a), {st.session_state['usuario']}")
+    abas = st.tabs(["📸 Novo Registro", "📊 Meu Histórico", "⚙️ Configurações"])
+
+    with abas[0]:
+        st.markdown("### Captura de Uso")
+        col_cam, col_info = st.columns([1.5, 1])
         
-        with col_c:
-            img_file = st.camera_input("Tire a foto para validar o uso")
+        with col_cam:
+            foto_cap = st.camera_input("Posicione o aparelho corretamente")
         
-        with col_t:
-            st.info("Certifique-se de que o aparelho esteja visível e a iluminação esteja adequada.")
-            if img_file:
-                if st.button("Confirmar e Enviar Registro"):
-                    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-                    nome_f = f"user_{st.session_state['user_id']}_{ts}.jpg"
+        with col_info:
+            st.markdown("#### Orientações")
+            st.write("1. Verifique se a iluminação está boa.")
+            st.write("2. O aparelho deve estar visível na boca.")
+            if foto_cap:
+                if st.button("Enviar Registro Agora"):
+                    data_ref = datetime.now()
+                    nome_f = f"reg_{st.session_state['user_id']}_{data_ref.strftime('%Y%m%d_%H%M%S')}.jpg"
                     
-                    # Processamento de Imagem (Redimensionamento para otimizar FTP)
-                    img = Image.open(img_file)
-                    img.save(nome_f, quality=85, optimize=True)
-                    
-                    with st.spinner("Sincronizando com o servidor..."):
-                        if upload_ftp_producao(nome_f, nome_f):
+                    with st.spinner("Sincronizando com servidor HostGator..."):
+                        if processar_e_enviar_ftp(foto_cap, nome_f):
                             db = conectar_banco()
                             if db:
                                 cursor = db.cursor()
-                                sql = "INSERT INTO registros_fotos (usuario_id, nome_arquivo, data_hora) VALUES (%s, %s, %s)"
-                                cursor.execute(sql, (st.session_state['user_id'], nome_f, datetime.now()))
+                                # Tabela 'registros' conforme seu HeidiSQL
+                                sql = "INSERT INTO registros (usuario_id, nome_arquivo, data_hora) VALUES (%s, %s, %s)"
+                                cursor.execute(sql, (st.session_state['user_id'], nome_f, data_ref))
+                                st.success("✅ Registro validado e salvo com sucesso!")
+                                st.session_state['ultimo_envio'] = data_ref
                                 db.close()
-                                st.success("✅ Registro enviado com sucesso!")
-                                if os.path.exists(nome_f): os.remove(nome_f)
-                        else:
-                            st.error("Erro ao subir imagem. Tente novamente.")
 
-    with tab_hist:
-        st.markdown("### Seus Registros Recentes")
+    with abas[1]:
+        st.markdown("### Últimos 10 Envios")
         db = conectar_banco()
         if db:
-            query = "SELECT data_hora as 'Data', nome_arquivo as 'Ref' FROM registros_fotos WHERE usuario_id = %s ORDER BY data_hora DESC LIMIT 10"
+            query = "SELECT data_hora as 'Data/Hora', nome_arquivo as 'Código' FROM registros WHERE usuario_id = %s ORDER BY data_hora DESC LIMIT 10"
             df = pd.read_sql(query, db, params=(st.session_state['user_id'],))
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df, use_container_width=True, hide_index=True)
             db.close()
+        else:
+            st.warning("Histórico temporariamente indisponível.")
 
-    with tab_info:
-        st.markdown("### Orientações Técnicas")
-        st.write("Este sistema monitora o tempo de uso do seu aparelho ortodôntico.")
-        if st.session_state['nivel'] == 'admin':
-            st.warning("Acesso Administrativo detectado. Use o menu lateral para relatórios.")
-
-# --- 5. LÓGICA DE EXECUÇÃO PRINCIPAL ---
+# --- 5. ORQUESTRAÇÃO DE EXECUÇÃO ---
 
 if __name__ == "__main__":
-    # Barra lateral de status discreta
-    with st.sidebar:
-        st.markdown("### 🖥️ Status da Rede")
-        status_db = conectar_banco()
-        if status_db:
-            st.success("Banco de Dados: Online")
-            status_db.close()
-        else:
-            st.error("Banco de Dados: Offline")
-        st.divider()
-        st.caption("Versão 2.4.1 - Produção")
-
-    # Orquestrador de Telas
-    if not st.session_state['logado']:
-        tela_login()
+    # Teste silencioso de saúde do servidor
+    saude = conectar_banco()
+    if saude:
+        st.sidebar.caption("🟢 Servidor Online")
+        saude.close()
     else:
-        dashboard_usuario()
+        st.sidebar.caption("🔴 Servidor Offline")
 
-# --- FIM DO CÓDIGO (APROX. 165 LINHAS) ---
+    if not st.session_state['logado']:
+        tela_autenticacao()
+    else:
+        painel_principal()
+
+# Total de linhas aproximado: 175-180 (incluindo comentários e espaços de leitura)
