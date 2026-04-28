@@ -19,7 +19,7 @@ st.set_page_config(
 
 # CSS Customizado
 st.markdown("""
-<style
+<style>
 /* Remove cabeçalho padrão */
 .stAppHeader, header, .stApp > header, [data-testid="stHeader"], [data-testid="stToolbar"] {
     display: none !important;
@@ -223,68 +223,80 @@ elif menu == "📊 Painel de Controle":
                 db.close()
                 st.rerun()
 
-            # CORREÇÃO: Converte data_hora para datetime de forma segura
-            # Verifica se a coluna é string e converte
-            if df['data_hora'].dtype == 'object':
-                df['data_hora'] = pd.to_datetime(df['data_hora'], errors='coerce')
+            # CORREÇÃO DEFINITIVA: Converter para datetime usando apply
+            def converter_para_datetime(valor):
+                try:
+                    if isinstance(valor, str):
+                        return datetime.strptime(valor, '%Y-%m-%d %H:%M:%S')
+                    return valor
+                except:
+                    return None
+            
+            df['data_hora'] = df['data_hora'].apply(converter_para_datetime)
             
             # Remove linhas com data inválida
-            df = df.dropna(subset=['data_hora'])
+            df = df[df['data_hora'].notna()]
             
-            # Extrai a data para agrupamento
-            df['dia'] = df['data_hora'].dt.date
-            
-            # Agrupa por usuário
-            for usuario_n, grupo in df.groupby("nome"):
-                with st.expander(f"👤 {usuario_n}", expanded=False):
-                    seg_total = 0
-                    check_t = None
-                    cards_data = []
+            if not df.empty:
+                # Extrai a data para agrupamento
+                df['dia'] = df['data_hora'].apply(lambda x: x.date())
+                
+                # Agrupa por usuário
+                for usuario_n in df['nome'].unique():
+                    grupo = df[df['nome'] == usuario_n].copy()
                     
-                    # Ordena por data_hora
-                    grupo_ord = grupo.sort_values('data_hora')
-                    
-                    for idx, row in grupo_ord.iterrows():
-                        if row['evento'] == "Check-in":
-                            check_t = row['data_hora']
-                        elif row['evento'] == "Check-out" and check_t:
-                            diff = (row['data_hora'] - check_t).total_seconds()
-                            seg_total += diff
-                            h_c = int(diff // 3600)
-                            m_c = int((diff % 3600) // 60)
-                            cards_data.append({"dia": row['dia'], "tempo": f"{h_c}h {m_c}m"})
-                            check_t = None
-                    
-                    h_t = int(seg_total // 3600)
-                    m_t = int((seg_total % 3600) // 60)
-                    st.subheader(f"⏱️ Total Acumulado: {h_t}h {m_t}m")
-                    
-                    if cards_data:
-                        st.write("#### Resumo por Dia")
-                        c_cols = st.columns(min(4, len(cards_data)))
-                        for i, card in enumerate(cards_data):
-                            with c_cols[i % len(c_cols)]:
-                                st.markdown(f"<div class='card-tempo'><small>{card['dia'].strftime('%d/%m/%Y')}</small><br><b>{card['tempo']}</b></div>", unsafe_allow_html=True)
-
-                    st.write("#### Detalhamento dos Registros")
-                    for idx, row in grupo_ord.iterrows():
-                        col1, col2, col3 = st.columns([3, 1, 1])
-                        # Formata a data/hora para exibição
-                        hora_str = row['data_hora'].strftime('%d/%m/%Y %H:%M:%S')
-                        col1.write(f"🔹 {hora_str} - {row['evento']}")
+                    with st.expander(f"👤 {usuario_n}", expanded=False):
+                        seg_total = 0
+                        check_t = None
+                        cards_data = []
                         
-                        if col2.button("🗑️ Apagar", key=f"del_{row['id']}"):
-                            gerenciar_ftp("deletar", row['nome_foto'])
-                            db = conectar_bd()
-                            cur = db.cursor()
-                            cur.execute("DELETE FROM registros WHERE id=%s", (row['id'],))
-                            db.close()
-                            st.rerun()
+                        # Ordena por data_hora
+                        grupo = grupo.sort_values('data_hora')
+                        
+                        for idx, row in grupo.iterrows():
+                            if row['evento'] == "Check-in":
+                                check_t = row['data_hora']
+                            elif row['evento'] == "Check-out" and check_t:
+                                diff = (row['data_hora'] - check_t).total_seconds()
+                                seg_total += diff
+                                h_c = int(diff // 3600)
+                                m_c = int((diff % 3600) // 60)
+                                cards_data.append({"dia": row['dia'], "tempo": f"{h_c}h {m_c}m"})
+                                check_t = None
+                        
+                        h_t = int(seg_total // 3600)
+                        m_t = int((seg_total % 3600) // 60)
+                        st.subheader(f"⏱️ Total Acumulado: {h_t}h {m_t}m")
+                        
+                        if cards_data:
+                            st.write("#### Resumo por Dia")
+                            num_cols = min(4, len(cards_data))
+                            c_cols = st.columns(num_cols)
+                            for i, card in enumerate(cards_data):
+                                with c_cols[i % num_cols]:
+                                    st.markdown(f"<div class='card-tempo'><small>{card['dia'].strftime('%d/%m/%Y')}</small><br><b>{card['tempo']}</b></div>", unsafe_allow_html=True)
+
+                        st.write("#### Detalhamento dos Registros")
+                        for idx, row in grupo.iterrows():
+                            col1, col2, col3 = st.columns([3, 1, 1])
+                            # Formata a data/hora para exibição
+                            hora_str = row['data_hora'].strftime('%d/%m/%Y %H:%M:%S')
+                            col1.write(f"🔹 {hora_str} - {row['evento']}")
                             
-                        if col3.toggle("🖼️ Ver Foto", key=f"img_{row['id']}"):
-                            img_bin = gerenciar_ftp("download", row['nome_foto'])
-                            if img_bin:
-                                st.image(img_bin, use_container_width=True)
+                            if col2.button("🗑️ Apagar", key=f"del_{row['id']}"):
+                                gerenciar_ftp("deletar", row['nome_foto'])
+                                db = conectar_bd()
+                                cur = db.cursor()
+                                cur.execute("DELETE FROM registros WHERE id=%s", (row['id'],))
+                                db.close()
+                                st.rerun()
+                                
+                            if col3.toggle("🖼️ Ver Foto", key=f"img_{row['id']}"):
+                                img_bin = gerenciar_ftp("download", row['nome_foto'])
+                                if img_bin:
+                                    st.image(img_bin, use_container_width=True)
+            else:
+                st.info("Nenhum registro com data válida encontrado.")
         else:
             st.info("Nenhum registro encontrado ainda.")
 
