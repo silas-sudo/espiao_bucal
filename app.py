@@ -81,8 +81,7 @@ def conectar_bd():
             database=c["database"],
             user=c["user"], 
             password=c["password"], 
-            autocommit=True,
-            time_zone='America/Sao_Paulo'  # Força timezone na conexão
+            autocommit=True
         )
         return conn
     except Exception as e:
@@ -184,28 +183,36 @@ if menu == "📷 Meu Registro":
         
         # Converte a última data para horário de Brasília se existir
         if ultimo and ultimo['data_hora']:
-            ultimo['data_hora'] = formatar_hora_brasilia(ultimo['data_hora'])
+            if isinstance(ultimo['data_hora'], str):
+                ultimo['data_hora'] = datetime.fromisoformat(ultimo['data_hora'])
         
         proximo = "Check-out" if ultimo and ultimo['evento'] == "Check-in" else "Check-in"
         
         col_c, _ = st.columns([2, 1])
         with col_c:
             foto = st.camera_input("Capturar Foto", label_visibility="collapsed")
-            st.info(f"Status Atual: **{proximo}**")
+            
+            # Mostra horário atual de Brasília
+            agora_brasilia = obter_horario_brasilia()
+            st.info(f"Status Atual: **{proximo}** | Hora do registro: **{agora_brasilia.strftime('%d/%m/%Y %H:%M:%S')}**")
             
             if st.button(f"Confirmar Registro de {proximo}", type="primary", use_container_width=True):
                 if foto:
-                    agora = obter_horario_brasilia()  # Usa horário de Brasília
+                    # Força o horário de Brasília
+                    agora = obter_horario_brasilia()
                     nome_f = f"{agora.strftime('%Y%m%d_%H%M%S')}_{user['id']}_{proximo.lower()}.jpg"
                     
                     with st.spinner("Enviando..."):
                         if gerenciar_ftp("upload", nome_f, foto):
                             db = conectar_bd()
                             cur = db.cursor()
+                            
+                            # Salva como string no formato ISO para evitar conversão automática do MySQL
+                            data_hora_str = agora.strftime('%Y-%m-%d %H:%M:%S')
                             sql = "INSERT INTO registros (data_hora, evento, nome_foto, usuario_id) VALUES (%s, %s, %s, %s)"
-                            cur.execute(sql, (agora, proximo, nome_f, user['id']))
+                            cur.execute(sql, (data_hora_str, proximo, nome_f, user['id']))
                             db.close()
-                            st.success("Sucesso!")
+                            st.success(f"Sucesso! Registrado às {data_hora_str} (Brasília)")
                             st.rerun()
                 else:
                     st.warning("Capture uma imagem")
@@ -232,9 +239,10 @@ elif menu == "📊 Painel de Controle":
                 db.close()
                 st.rerun()
 
-            # Converte data_hora para horário de Brasília
-            df['data_hora'] = pd.to_datetime(df['data_hora'])
-            df['data_hora'] = df['data_hora'].apply(formatar_hora_brasilia)
+            # Converte data_hora para datetime se for string
+            if df['data_hora'].dtype == 'object':
+                df['data_hora'] = pd.to_datetime(df['data_hora'])
+            
             df['dia'] = df['data_hora'].dt.date
             
             for usuario_n, grupo in df.groupby("nome"):
@@ -257,22 +265,27 @@ elif menu == "📊 Painel de Controle":
                     
                     h_t = int(seg_total // 3600)
                     m_t = int((seg_total % 3600) // 60)
-                    st.subheader(f"⏱️ Total: {h_t}h {m_t}m")
+                    st.subheader(f"⏱️ Total Acumulado: {h_t}h {m_t}m")
                     
                     if cards_data:
+                        st.write("#### Resumo por Dia")
                         c_cols = st.columns(4)
                         for i, card in enumerate(cards_data):
                             with c_cols[i % 4]:
-                                st.markdown(f"<div class='card-tempo'><small>{card['dia'].strftime('%d/%m')}</small><br><b>{card['tempo']}</b></div>", unsafe_allow_html=True)
+                                st.markdown(f"<div class='card-tempo'><small>{card['dia'].strftime('%d/%m/%Y')}</small><br><b>{card['tempo']}</b></div>", unsafe_allow_html=True)
 
-                    st.write("#### Detalhes")
+                    st.write("#### Detalhamento dos Registros")
                     for r in grupo.itertuples():
                         col1, col2, col3 = st.columns([3, 1, 1])
-                        # Exibe horário formatado de Brasília
-                        hora_str = r.data_hora.strftime('%d/%m %H:%M:%S')
+                        # Formata a data/hora para exibição
+                        if isinstance(r.data_hora, str):
+                            data_obj = datetime.fromisoformat(r.data_hora)
+                        else:
+                            data_obj = r.data_hora
+                        hora_str = data_obj.strftime('%d/%m/%Y %H:%M:%S')
                         col1.write(f"🔹 {hora_str} - {r.evento}")
                         
-                        if col2.button("🗑️", key=f"del_{r.id}"):
+                        if col2.button("🗑️ Apagar", key=f"del_{r.id}"):
                             gerenciar_ftp("deletar", r.nome_foto)
                             db = conectar_bd()
                             cur = db.cursor()
@@ -280,47 +293,72 @@ elif menu == "📊 Painel de Controle":
                             db.close()
                             st.rerun()
                             
-                        if col3.toggle("🖼️", key=f"img_{r.id}"):
+                        if col3.toggle("🖼️ Ver Foto", key=f"img_{r.id}"):
                             img_bin = gerenciar_ftp("download", r.nome_foto)
                             if img_bin:
                                 st.image(img_bin, use_container_width=True)
+        else:
+            st.info("Nenhum registro encontrado ainda.")
 
 # --- MÓDULO: GESTÃO DE USUÁRIOS ---
 elif menu == "👥 Gestão de Usuários":
     st.header("👥 Administração de Contas")
     db = conectar_bd()
     
-    with st.expander("➕ Novo Usuário"):
-        with st.form("cad_user"):
-            n = st.text_input("Nome")
-            u = st.text_input("Login").lower().strip()
-            s = st.text_input("Senha")
-            p = st.selectbox("Perfil", ["user", "admin"])
-            if st.form_submit_button("Salvar", use_container_width=True):
-                cur = db.cursor()
-                cur.execute("INSERT INTO usuarios (nome, usuario, senha, perfil) VALUES (%s,%s,%s,%s)", (n,u,s,p))
-                db.commit()
-                st.rerun()
-
-    u_df = pd.read_sql("SELECT * FROM usuarios", db)
-    for row in u_df.itertuples():
-        with st.expander(f"👤 {row.nome} ({row.usuario})"):
-            c1, c2 = st.columns([3, 1])
-            with c1:
-                with st.form(f"edit_{row.id}"):
-                    en = st.text_input("Nome", value=row.nome)
-                    eu = st.text_input("Usuário", value=row.usuario)
-                    es = st.text_input("Senha", value=row.senha)
-                    if st.form_submit_button("Alterar", use_container_width=True):
+    if db:
+        with st.expander("➕ Cadastrar Novo Usuário"):
+            with st.form("cad_user"):
+                n = st.text_input("Nome Completo")
+                u = st.text_input("Login/Usuário").lower().strip()
+                s = st.text_input("Senha", type="password")
+                p = st.selectbox("Perfil de Acesso", ["user", "admin"])
+                if st.form_submit_button("Salvar Cadastro", use_container_width=True):
+                    if n and u and s:
                         cur = db.cursor()
-                        cur.execute("UPDATE usuarios SET nome=%s, usuario=%s, senha=%s WHERE id=%s", (en, eu, es, row.id))
+                        cur.execute("INSERT INTO usuarios (nome, usuario, senha, perfil) VALUES (%s,%s,%s,%s)", (n,u,s,p))
                         db.commit()
+                        st.success("Usuário cadastrado com sucesso!")
                         st.rerun()
-            with c2:
-                if st.button("❌", key=f"u_del_{row.id}"):
-                    cur = db.cursor()
-                    cur.execute("DELETE FROM usuarios WHERE id=%s", (row.id,))
-                    db.commit()
-                    st.rerun()
-    
-    db.close()
+                    else:
+                        st.warning("Preencha todos os campos!")
+
+        # Listagem de usuários
+        st.subheader("📋 Usuários Cadastrados")
+        u_df = pd.read_sql("SELECT id, nome, usuario, perfil FROM usuarios ORDER BY nome", db)
+        
+        for row in u_df.itertuples():
+            with st.expander(f"👤 {row.nome} (Login: {row.usuario}) - {row.perfil.upper()}"):
+                c1, c2 = st.columns([3, 1])
+                with c1:
+                    with st.form(f"edit_{row.id}"):
+                        en = st.text_input("Nome", value=row.nome)
+                        eu = st.text_input("Usuário", value=row.usuario)
+                        es = st.text_input("Nova Senha", type="password", placeholder="Deixe em branco para manter a mesma")
+                        ep = st.selectbox("Perfil", ["user", "admin"], index=0 if row.perfil == "user" else 1)
+                        
+                        if st.form_submit_button("Confirmar Alteração", use_container_width=True):
+                            cur = db.cursor()
+                            if es:
+                                cur.execute("UPDATE usuarios SET nome=%s, usuario=%s, senha=%s, perfil=%s WHERE id=%s", 
+                                          (en, eu, es, ep, row.id))
+                            else:
+                                cur.execute("UPDATE usuarios SET nome=%s, usuario=%s, perfil=%s WHERE id=%s", 
+                                          (en, eu, ep, row.id))
+                            db.commit()
+                            st.success("Alterado com sucesso!")
+                            st.rerun()
+                
+                with c2:
+                    st.write("---")
+                    if st.button("❌ Excluir Usuário", key=f"u_del_{row.id}"):
+                        # Verifica se não é o próprio usuário logado
+                        if row.id == user['id']:
+                            st.error("Você não pode excluir a própria conta!")
+                        else:
+                            cur = db.cursor()
+                            cur.execute("DELETE FROM usuarios WHERE id=%s", (row.id,))
+                            db.commit()
+                            st.success("Usuário excluído!")
+                            st.rerun()
+        
+        db.close()
