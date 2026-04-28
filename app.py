@@ -12,81 +12,87 @@ st.set_page_config(
     page_title="Espião Bucal Pro", 
     page_icon="🦷", 
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
+    menu_items=None  # Remove menu padrão do Streamlit
 )
 
-# CSS Customizado para ajustes de Layout e Login
+# CSS Customizado para remover cabeçalho e ajustar layout
 st.markdown("""
-    <style>
-    /* Remove completamente o cabeçalho padrão do Streamlit */
-    .stAppHeader {
-        display: none !important;
-        visibility: hidden !important;
-        background: transparent !important;
-    }
-    
-    /* Remove o header padrão e qualquer elemento fixo no topo */
-    header {
-        display: none !important;
-        visibility: hidden !important;
-        background: transparent !important;
-    }
-    
-    /* Remove o espaço reservado pelo header */
-    .stApp > header {
-        display: none !important;
-    }
-    
-    /* Ajusta o padding superior do conteúdo principal */
-    .main .block-container {
-        padding-top: 1rem !important;
-    }
-    
-    /* Remove qualquer borda ou sombra superior */
-    .stApp {
-        border-top: none !important;
-    }
-    
-    /* Cards de tempo no Dashboard */
-    .card-tempo { 
-        background-color: #1e1e1e; 
-        border: 1px solid #333; 
-        border-radius: 12px; 
-        padding: 15px; 
-        text-align: center; 
-        margin-bottom: 15px; 
-    }
-    
-    /* Botões padronizados */
-    .stButton button { 
-        width: 100%; 
-        border-radius: 10px; 
-        height: 3.5em; 
-        font-weight: bold; 
-    }
-    
-    /* Box de Login Centralizado */
-    .login-box { 
-        max-width: 400px; 
-        margin: 0 auto; 
-        padding: 2.5rem; 
-        border: 1px solid #333; 
-        border-radius: 15px; 
-        background-color: #0e1117; 
-        box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-    }
-    </style>
-    """, unsafe_allow_html=True)
-        max-width: 400px; 
-        margin: 0 auto; 
-        padding: 2.5rem; 
-        border: 1px solid #333; 
-        border-radius: 15px; 
-        background-color: #0e1117; 
-        box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-    }
-    </style>
-    """, unsafe_allow_html=True)
+<style>
+/* Remove completamente o cabeçalho padrão do Streamlit */
+.stAppHeader {
+    display: none !important;
+    visibility: hidden !important;
+    background: transparent !important;
+    height: 0 !important;
+}
+
+/* Remove o header padrão */
+header {
+    display: none !important;
+    visibility: hidden !important;
+    background: transparent !important;
+}
+
+/* Remove o espaço reservado pelo header */
+.stApp > header {
+    display: none !important;
+}
+
+/* Remove toolbar e elementos extras */
+[data-testid="stHeader"] {
+    display: none !important;
+}
+
+[data-testid="stToolbar"] {
+    display: none !important;
+}
+
+/* Ajusta o padding superior do conteúdo principal */
+.main .block-container {
+    padding-top: 0.5rem !important;
+}
+
+/* Remove qualquer borda ou sombra superior */
+.stApp {
+    border-top: none !important;
+}
+
+/* Cards de tempo no Dashboard */
+.card-tempo { 
+    background-color: #1e1e1e; 
+    border: 1px solid #333; 
+    border-radius: 12px; 
+    padding: 15px; 
+    text-align: center; 
+    margin-bottom: 15px; 
+}
+
+/* Botões padronizados */
+.stButton button { 
+    width: 100%; 
+    border-radius: 10px; 
+    height: 3.5em; 
+    font-weight: bold; 
+}
+
+/* Box de Login Centralizado */
+.login-box { 
+    max-width: 400px; 
+    margin: 0 auto; 
+    padding: 2.5rem; 
+    border: 1px solid #333; 
+    border-radius: 15px; 
+    background-color: #0e1117; 
+    box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+}
+
+/* Remove padding superior da sidebar */
+[data-testid="stSidebar"] > div:first-child {
+    padding-top: 1rem;
+}
+</style>
+""", unsafe_allow_html=True)
 
 # --- 2. CAMADA DE INFRAESTRUTURA (CONEXÕES HOSTGATOR) ---
 
@@ -131,14 +137,12 @@ def gerenciar_ftp(acao, nome_arquivo=None, foto_buffer=None):
             resultado = buf.getvalue()
             
         elif acao == "deletar":
-            # Ajuste 3: Exclusão física do arquivo para não ocupar espaço
             ftp.delete(nome_arquivo)
             resultado = True
         
         ftp.quit()
         return resultado
     except Exception as e:
-        # Silenciamos erros de download se o arquivo não existir, mas avisamos no upload
         if acao != "download":
             st.error(f"Erro no Servidor de Arquivos (FTP): {e}")
         return None
@@ -149,9 +153,9 @@ if 'logado' not in st.session_state:
 if 'user_info' not in st.session_state:
     st.session_state.user_info = None
 
-# --- 4. TELA DE LOGIN (AJUSTE 1: CENTRALIZADA E LIMPA) ---
+# --- 4. TELA DE LOGIN (CENTRALIZADA E LIMPA) ---
 if not st.session_state.logado:
-    st.write("") # Espaço vazio para compensar o topo
+    st.write("")  # Espaço vazio para compensar o topo
     _, col_login, _ = st.columns([1, 1.2, 1])
     
     with col_login:
@@ -188,7 +192,7 @@ if st.sidebar.button("Encerrar Sessão"):
     st.session_state.clear()
     st.rerun()
 
-# Ajuste 2: Removido 'Meu Registro' para perfil Admin
+# Menu baseado no perfil
 if user['perfil'] == 'admin':
     menu = st.sidebar.radio("Navegação", ["📊 Painel de Controle", "👥 Gestão de Usuários"])
 else:
@@ -235,13 +239,11 @@ elif menu == "📊 Painel de Controle":
     
     db = conectar_bd()
     if db:
-        # Consulta avançada com Join
         query = "SELECT r.*, u.nome FROM registros r JOIN usuarios u ON r.usuario_id = u.id ORDER BY r.data_hora DESC"
         df = pd.read_sql(query, db)
         db.close()
 
         if not df.empty:
-            # Ajuste 3: Opção para zerar registros na sidebar
             if st.sidebar.button("🚨 Zerar Todos os Registros"):
                 db = conectar_bd()
                 cur = db.cursor()
@@ -257,12 +259,11 @@ elif menu == "📊 Painel de Controle":
             df['dia'] = df['data_hora'].dt.date
             
             for usuario_n, grupo in df.groupby("nome"):
-                # Ajuste 4: Soma de tempo exibida no Card do Usuário
                 with st.expander(f"👤 {usuario_n}", expanded=False):
-                    seg_total = 0; check_t = None
+                    seg_total = 0
+                    check_t = None
                     cards_data = []
                     
-                    # Ordenar por data para cálculo correto
                     grupo_ord = grupo.sort_values('data_hora')
                     for r in grupo_ord.itertuples():
                         if r.evento == "Check-in":
@@ -270,20 +271,20 @@ elif menu == "📊 Painel de Controle":
                         elif r.evento == "Check-out" and check_t:
                             diff = (r.data_hora - check_t).total_seconds()
                             seg_total += diff
-                            h_c = int(diff // 3600); m_c = int((diff % 3600) // 60)
+                            h_c = int(diff // 3600)
+                            m_c = int((diff % 3600) // 60)
                             cards_data.append({"dia": r.dia, "tempo": f"{h_c}h {m_c}m"})
                             check_t = None
                     
-                    h_t = int(seg_total // 3600); m_t = int((seg_total % 3600) // 60)
+                    h_t = int(seg_total // 3600)
+                    m_t = int((seg_total % 3600) // 60)
                     st.subheader(f"⏱️ Tempo Total Acumulado: {h_t}h {m_t}m")
                     
-                    # Exibição de cards
                     c_cols = st.columns(4)
                     for i, card in enumerate(cards_data):
                         with c_cols[i % 4]:
                             st.markdown(f"<div class='card-tempo'><small>{card['dia'].strftime('%d/%m')}</small><br><b>{card['tempo']}</b></div>", unsafe_allow_html=True)
 
-                    # Tabela detalhada com opção de exclusão (Ajuste 3)
                     st.write("#### Detalhamento de Fotos e Eventos")
                     for r in grupo.itertuples():
                         col1, col2, col3 = st.columns([3, 1, 1])
@@ -311,15 +312,16 @@ elif menu == "👥 Gestão de Usuários":
     with st.expander("➕ Cadastrar Novo Usuário/Paciente"):
         with st.form("cad_user"):
             n = st.text_input("Nome Completo")
-            u = st.text_input("Login/Usuário").lower().strip() # Ajuste 4
+            u = st.text_input("Login/Usuário").lower().strip()
             s = st.text_input("Senha")
             p = st.selectbox("Nível de Acesso", ["user", "admin"])
             if st.form_submit_button("Salvar Cadastro"):
                 cur = db.cursor()
                 cur.execute("INSERT INTO usuarios (nome, usuario, senha, perfil) VALUES (%s,%s,%s,%s)", (n,u,s,p))
+                db.commit()
                 st.rerun()
 
-    # Listagem para Edição (Ajuste 4: Incluindo campo Usuário)
+    # Listagem para Edição
     u_df = pd.read_sql("SELECT * FROM usuarios", db)
     for row in u_df.itertuples():
         with st.expander(f"👤 {row.nome} (Login: {row.usuario})"):
@@ -332,10 +334,14 @@ elif menu == "👥 Gestão de Usuários":
                     if st.form_submit_button("Confirmar Alteração"):
                         cur = db.cursor()
                         cur.execute("UPDATE usuarios SET nome=%s, usuario=%s, senha=%s WHERE id=%s", (en, eu, es, row.id))
+                        db.commit()
                         st.rerun()
             with c2:
                 st.write("---")
                 if st.button("❌ Excluir", key=f"u_del_{row.id}"):
                     cur = db.cursor()
                     cur.execute("DELETE FROM usuarios WHERE id=%s", (row.id,))
+                    db.commit()
                     st.rerun()
+    
+    db.close()
