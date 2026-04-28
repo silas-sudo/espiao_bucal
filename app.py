@@ -5,13 +5,24 @@ import pandas as pd
 from datetime import datetime
 from PIL import Image
 import io
+import os
 
 # --- 1. CONFIGURAÇÕES DE INTERFACE ---
-st.set_page_config(page_title="Espião Bucal", page_icon="🦷", layout="wide")
+st.set_page_config(
+    page_title="Espião Bucal Pro", 
+    page_icon="🦷", 
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
+# CSS Customizado para ajustes de Layout e Login
 st.markdown("""
     <style>
-    /* Estilização dos Cards de Tempo */
+    /* Ajuste 1: Remove o retângulo branco no topo */
+    .stAppHeader { background: transparent; }
+    header {visibility: hidden;}
+    
+    /* Cards de tempo no Dashboard */
     .card-tempo { 
         background-color: #1e1e1e; 
         border: 1px solid #333; 
@@ -20,36 +31,49 @@ st.markdown("""
         text-align: center; 
         margin-bottom: 15px; 
     }
-    .stButton button { width: 100%; border-radius: 10px; height: 3.5em; font-weight: bold; }
     
-    /* Centralização do Login */
-    .login-box {
-        max-width: 400px;
-        margin: 0 auto;
-        padding: 2rem;
-        border: 1px solid #333;
-        border-radius: 15px;
-        background-color: #0e1117;
+    /* Botões padronizados */
+    .stButton button { 
+        width: 100%; 
+        border-radius: 10px; 
+        height: 3.5em; 
+        font-weight: bold; 
+    }
+    
+    /* Box de Login Centralizado */
+    .login-box { 
+        max-width: 400px; 
+        margin: 0 auto; 
+        padding: 2.5rem; 
+        border: 1px solid #333; 
+        border-radius: 15px; 
+        background-color: #0e1117; 
+        box-shadow: 0 4px 15px rgba(0,0,0,0.5);
     }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. INFRAESTRUTURA (CONEXÕES REMOTAS) ---
+# --- 2. CAMADA DE INFRAESTRUTURA (CONEXÕES HOSTGATOR) ---
 
 def conectar_bd():
-    """Conexão segura via Secrets (HostGator)"""
+    """Gerencia conexão remota com MySQL"""
     try:
         c = st.secrets["mysql"]
-        return mysql.connector.connect(
-            host=c["host"], port=c["port"], database=c["database"],
-            user=c["user"], password=c["password"], autocommit=True
+        conn = mysql.connector.connect(
+            host=c["host"], 
+            port=c["port"], 
+            database=c["database"],
+            user=c["user"], 
+            password=c["password"], 
+            autocommit=True
         )
+        return conn
     except Exception as e:
-        st.error(f"Falha na conexão com o banco: {e}")
+        st.error(f"Falha Crítica na Conexão com Banco: {e}")
         return None
 
 def gerenciar_ftp(acao, nome_arquivo=None, foto_buffer=None):
-    """Lida com Upload e Download de imagens no servidor HostGator"""
+    """Lida com Sincronização de Arquivos no Servidor"""
     try:
         ftp = ftplib.FTP("69.49.241.31")
         ftp.login("espiao@francotec.com.br", "Helena@!*2026")
@@ -61,178 +85,222 @@ def gerenciar_ftp(acao, nome_arquivo=None, foto_buffer=None):
             if img.mode != 'RGB': img = img.convert('RGB')
             buf = io.BytesIO()
             img.save(buf, format="JPEG", quality=75)
-            ftp.storbinary(f'STOR {nome_arquivo}', io.BytesIO(buf.getvalue()))
+            buf.seek(0)
+            ftp.storbinary(f'STOR {nome_arquivo}', buf)
             resultado = True
+            
         elif acao == "download":
             buf = io.BytesIO()
             ftp.retrbinary(f'RETR {nome_arquivo}', buf.write)
+            buf.seek(0)
             resultado = buf.getvalue()
+            
+        elif acao == "deletar":
+            # Ajuste 3: Exclusão física do arquivo para não ocupar espaço
+            ftp.delete(nome_arquivo)
+            resultado = True
         
         ftp.quit()
         return resultado
     except Exception as e:
-        st.error(f"Erro no servidor de arquivos (FTP): {e}")
+        # Silenciamos erros de download se o arquivo não existir, mas avisamos no upload
+        if acao != "download":
+            st.error(f"Erro no Servidor de Arquivos (FTP): {e}")
         return None
 
-# --- 3. GESTÃO DE SESSÃO ---
+# --- 3. GESTÃO DE ESTADO DA SESSÃO ---
 if 'logado' not in st.session_state:
-    st.session_state.update({'logado': False, 'user_info': None})
+    st.session_state.logado = False
+if 'user_info' not in st.session_state:
+    st.session_state.user_info = None
 
-# --- 4. TELA DE LOGIN CENTRALIZADA ---
+# --- 4. TELA DE LOGIN (AJUSTE 1: CENTRALIZADA E LIMPA) ---
 if not st.session_state.logado:
-    st.write("#") # Espaçamento topo
-    _, col_cent, _ = st.columns([1, 1.2, 1])
-    with col_cent:
+    st.write("") # Espaço vazio para compensar o topo
+    _, col_login, _ = st.columns([1, 1.2, 1])
+    
+    with col_login:
         st.markdown('<div class="login-box">', unsafe_allow_html=True)
-        st.title("🦷 Login")
+        st.markdown("<h2 style='text-align: center; color: white;'>🦷 Espião Bucal</h2>", unsafe_allow_html=True)
         with st.form("login_form"):
             u = st.text_input("Usuário").lower().strip()
             p = st.text_input("Senha", type="password").strip()
-            if st.form_submit_button("Acessar Sistema"):
+            
+            submit = st.form_submit_button("Acessar Painel")
+            if submit:
                 db = conectar_bd()
                 if db:
                     cursor = db.cursor(dictionary=True)
                     cursor.execute("SELECT * FROM usuarios WHERE LOWER(usuario) = %s AND senha = %s", (u, p))
                     res = cursor.fetchone()
                     db.close()
+                    
                     if res:
                         st.session_state.logado = True
                         st.session_state.user_info = res
                         st.rerun()
                     else:
-                        st.error("Usuário ou senha inválidos.")
+                        st.error("Credenciais inválidas. Tente novamente.")
         st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
-# --- 5. INTERFACE PRINCIPAL ---
+# --- 5. INTERFACE PRINCIPAL LOGADA ---
 user = st.session_state.user_info
 st.sidebar.title(f"👤 {user['nome']}")
+st.sidebar.write(f"Nível: {user['perfil'].upper()}")
+
 if st.sidebar.button("Encerrar Sessão"):
     st.session_state.clear()
     st.rerun()
 
-# Menu por Perfil
+# Ajuste 2: Removido 'Meu Registro' para perfil Admin
 if user['perfil'] == 'admin':
-    menu = st.sidebar.radio("Navegação", ["📷 Meu Registro", "📊 Painel de Controle", "👥 Gestão de Usuários"])
+    menu = st.sidebar.radio("Navegação", ["📊 Painel de Controle", "👥 Gestão de Usuários"])
 else:
     menu = "📷 Meu Registro"
 
-# --- LÓGICA 1: MEU REGISTRO (CÂMERA) ---
+# --- MÓDULO: MEU REGISTRO (PACIENTES) ---
 if menu == "📷 Meu Registro":
     st.header("📸 Captura de Uso")
+    
     db = conectar_bd()
     if db:
         cursor = db.cursor(dictionary=True)
         cursor.execute("SELECT evento FROM registros WHERE usuario_id = %s ORDER BY data_hora DESC LIMIT 1", (user['id'],))
         ultimo = cursor.fetchone()
         db.close()
-    
-    proximo = "Check-out" if ultimo and ultimo['evento'] == "Check-in" else "Check-in"
-    
-    col_c, _ = st.columns([2, 1])
-    with col_c:
-        foto = st.camera_input("Capturar", label_visibility="collapsed")
-        st.write(f"Ação Atual: **{proximo}**")
         
-        if st.button(f"Confirmar {proximo}", type="primary"):
-            if foto:
-                agora = datetime.now()
-                nome_f = f"{agora.strftime('%Y%m%d_%H%M%S')}_{user['id']}_{proximo.lower()}.jpg"
-                
-                with st.spinner("Sincronizando imagens..."):
-                    if gerenciar_ftp("upload", nome_f, foto):
-                        db = conectar_bd()
-                        cursor = db.cursor()
-                        cursor.execute("INSERT INTO registros (data_hora, evento, nome_foto, usuario_id) VALUES (%s, %s, %s, %s)", 
-                                     (agora, proximo, nome_f, user['id']))
-                        db.close()
-                        st.success("Salvo no servidor!")
-                        st.rerun()
-            else: st.warning("Por favor, tire a foto primeiro.")
+        proximo = "Check-out" if ultimo and ultimo['evento'] == "Check-in" else "Check-in"
+        
+        col_c, _ = st.columns([2, 1])
+        with col_c:
+            foto = st.camera_input("Capturar Foto", label_visibility="collapsed")
+            st.info(f"Status Atual: **{proximo}**")
+            
+            if st.button(f"Confirmar Registro de {proximo}", type="primary"):
+                if foto:
+                    agora = datetime.now()
+                    nome_f = f"{agora.strftime('%Y%m%d_%H%M%S')}_{user['id']}_{proximo.lower()}.jpg"
+                    
+                    with st.spinner("Enviando dados..."):
+                        if gerenciar_ftp("upload", nome_f, foto):
+                            db = conectar_bd()
+                            cur = db.cursor()
+                            sql = "INSERT INTO registros (data_hora, evento, nome_foto, usuario_id) VALUES (%s, %s, %s, %s)"
+                            cur.execute(sql, (agora, proximo, nome_f, user['id']))
+                            db.close()
+                            st.success("Sincronizado com Sucesso!")
+                            st.rerun()
+                else:
+                    st.warning("Por favor, capture uma imagem para validar.")
 
-# --- LÓGICA 2: PAINEL DE CONTROLE (ADMIN) ---
+# --- MÓDULO: PAINEL DE CONTROLE (ADMIN) ---
 elif menu == "📊 Painel de Controle":
-    st.header("📊 Dashboard de Monitoramento")
+    st.header("📊 Gestão de Monitoramento")
+    
     db = conectar_bd()
     if db:
-        # Puxa todos os registros cruzando com nomes de usuários
-        query = "SELECT r.*, u.nome FROM registros r JOIN usuarios u ON r.usuario_id = u.id ORDER BY r.data_hora ASC"
+        # Consulta avançada com Join
+        query = "SELECT r.*, u.nome FROM registros r JOIN usuarios u ON r.usuario_id = u.id ORDER BY r.data_hora DESC"
         df = pd.read_sql(query, db)
         db.close()
 
         if not df.empty:
+            # Ajuste 3: Opção para zerar registros na sidebar
+            if st.sidebar.button("🚨 Zerar Todos os Registros"):
+                db = conectar_bd()
+                cur = db.cursor()
+                cur.execute("SELECT nome_foto FROM registros")
+                todas_fotos = cur.fetchall()
+                for f in todas_fotos:
+                    gerenciar_ftp("deletar", f[0])
+                cur.execute("TRUNCATE TABLE registros")
+                db.close()
+                st.rerun()
+
             df['data_hora'] = pd.to_datetime(df['data_hora'])
             df['dia'] = df['data_hora'].dt.date
             
-            # Agrupar por usuário para criar os Expanders
             for usuario_n, grupo in df.groupby("nome"):
+                # Ajuste 4: Soma de tempo exibida no Card do Usuário
                 with st.expander(f"👤 {usuario_n}", expanded=False):
                     seg_total = 0; check_t = None
-                    dados_cards = []
+                    cards_data = []
                     
-                    # Lógica de cálculo de tempo por par Check-in/Out
-                    for r in grupo.itertuples():
+                    # Ordenar por data para cálculo correto
+                    grupo_ord = grupo.sort_values('data_hora')
+                    for r in grupo_ord.itertuples():
                         if r.evento == "Check-in":
                             check_t = r.data_hora
                         elif r.evento == "Check-out" and check_t:
                             diff = (r.data_hora - check_t).total_seconds()
                             seg_total += diff
                             h_c = int(diff // 3600); m_c = int((diff % 3600) // 60)
-                            dados_cards.append({"dia": r.dia, "tempo": f"{h_c}h {m_c}m"})
+                            cards_data.append({"dia": r.dia, "tempo": f"{h_c}h {m_c}m"})
                             check_t = None
                     
-                    # Exibe o Tempo Total do Usuário no Card
                     h_t = int(seg_total // 3600); m_t = int((seg_total % 3600) // 60)
-                    st.subheader(f"Tempo Total: {h_t}h {m_t}m")
+                    st.subheader(f"⏱️ Tempo Total Acumulado: {h_t}h {m_t}m")
                     
-                    # Grid de cards diários
-                    cols = st.columns(4)
-                    for i, card in enumerate(dados_cards):
-                        with cols[i % 4]:
+                    # Exibição de cards
+                    c_cols = st.columns(4)
+                    for i, card in enumerate(cards_data):
+                        with c_cols[i % 4]:
                             st.markdown(f"<div class='card-tempo'><small>{card['dia'].strftime('%d/%m')}</small><br><b>{card['tempo']}</b></div>", unsafe_allow_html=True)
-                            if st.toggle("🖼️ Fotos", key=f"f_{usuario_n}_{i}"):
-                                # Filtra fotos deste dia específico para este usuário
-                                fotos_dia = grupo[grupo['dia'] == card['dia']]
-                                for f in fotos_dia.itertuples():
-                                    img_bin = gerenciar_ftp("download", f.nome_foto)
-                                    if img_bin:
-                                        st.image(img_bin, caption=f"{f.evento} {f.data_hora.strftime('%H:%M')}")
 
-# --- LÓGICA 3: GESTÃO DE USUÁRIOS ---
+                    # Tabela detalhada com opção de exclusão (Ajuste 3)
+                    st.write("#### Detalhamento de Fotos e Eventos")
+                    for r in grupo.itertuples():
+                        col1, col2, col3 = st.columns([3, 1, 1])
+                        col1.write(f"🔹 {r.data_hora.strftime('%d/%m %H:%M')} - {r.evento}")
+                        
+                        if col2.button("🗑️ Apagar", key=f"del_{r.id}"):
+                            gerenciar_ftp("deletar", r.nome_foto)
+                            db = conectar_bd()
+                            cur = db.cursor()
+                            cur.execute("DELETE FROM registros WHERE id=%s", (r.id,))
+                            db.close()
+                            st.rerun()
+                            
+                        if col3.toggle("🖼️ Ver Foto", key=f"img_{r.id}"):
+                            img_bin = gerenciar_ftp("download", r.nome_foto)
+                            if img_bin:
+                                st.image(img_bin, use_container_width=True)
+
+# --- MÓDULO: GESTÃO DE USUÁRIOS ---
 elif menu == "👥 Gestão de Usuários":
-    st.header("👥 Gerenciar Acessos")
+    st.header("👥 Administração de Contas")
     db = conectar_bd()
     
-    # Formulário para novo usuário
-    with st.expander("➕ Cadastrar Novo Paciente/Admin"):
-        with st.form("novo_user"):
+    # Novo Cadastro
+    with st.expander("➕ Cadastrar Novo Usuário/Paciente"):
+        with st.form("cad_user"):
             n = st.text_input("Nome Completo")
-            u = st.text_input("Login").lower().strip()
+            u = st.text_input("Login/Usuário").lower().strip() # Ajuste 4
             s = st.text_input("Senha")
-            p = st.selectbox("Perfil", ["user", "admin"])
-            if st.form_submit_button("Salvar"):
-                cursor = db.cursor()
-                cursor.execute("INSERT INTO usuarios (nome, usuario, senha, perfil) VALUES (%s,%s,%s,%s)", (n,u,s,p))
+            p = st.selectbox("Nível de Acesso", ["user", "admin"])
+            if st.form_submit_button("Salvar Cadastro"):
+                cur = db.cursor()
+                cur.execute("INSERT INTO usuarios (nome, usuario, senha, perfil) VALUES (%s,%s,%s,%s)", (n,u,s,p))
                 st.rerun()
 
-    # Listagem de usuários existentes
+    # Listagem para Edição (Ajuste 4: Incluindo campo Usuário)
     u_df = pd.read_sql("SELECT * FROM usuarios", db)
     for row in u_df.itertuples():
-        # O título do expander agora exibe o nome corretamente após o cadastro
-        with st.expander(f"👤 {row.nome} ({row.perfil})"):
-            c_ed, c_del = st.columns([3, 1])
-            with c_ed:
-                with st.form(f"form_ed_{row.id}"):
+        with st.expander(f"👤 {row.nome} (Login: {row.usuario})"):
+            c1, c2 = st.columns([3, 1])
+            with c1:
+                with st.form(f"edit_{row.id}"):
                     en = st.text_input("Nome", value=row.nome)
+                    eu = st.text_input("Usuário", value=row.usuario)
                     es = st.text_input("Senha", value=row.senha)
-                    if st.form_submit_button("Salvar Alterações"):
-                        cursor = db.cursor()
-                        cursor.execute("UPDATE usuarios SET nome=%s, senha=%s WHERE id=%s", (en, es, row.id))
+                    if st.form_submit_button("Confirmar Alteração"):
+                        cur = db.cursor()
+                        cur.execute("UPDATE usuarios SET nome=%s, usuario=%s, senha=%s WHERE id=%s", (en, eu, es, row.id))
                         st.rerun()
-            with c_del:
-                st.write("Ações")
-                if st.button("Remover Usuário", key=f"btn_del_{row.id}", type="secondary"):
-                    cursor = db.cursor()
-                    cursor.execute("DELETE FROM usuarios WHERE id=%s", (row.id,))
-                    st.warning(f"Usuário {row.nome} removido.")
+            with c2:
+                st.write("---")
+                if st.button("❌ Excluir", key=f"u_del_{row.id}"):
+                    cur = db.cursor()
+                    cur.execute("DELETE FROM usuarios WHERE id=%s", (row.id,))
                     st.rerun()
