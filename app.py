@@ -18,10 +18,14 @@ st.set_page_config(
 # CSS Customizado para ajustes de Layout e Login
 st.markdown("""
     <style>
-    /* Ajuste 1: Remove o retângulo branco no topo */
-    .stAppHeader { background: transparent; }
-    header {visibility: hidden;}
-    
+    /* Remove completamente o cabeçalho padrão */
+    .stAppHeader, .stHeader {
+        display: none;
+    }
+    div[data-testid="stHeader"] {
+        display: none;
+    }
+
     /* Cards de tempo no Dashboard */
     .card-tempo { 
         background-color: #1e1e1e; 
@@ -50,8 +54,14 @@ st.markdown("""
         background-color: #0e1117; 
         box-shadow: 0 4px 15px rgba(0,0,0,0.5);
     }
+
+    /* Remove margens extras do main */
+    main {
+        margin-top: 0px;
+        padding-top: 0px;
+    }
     </style>
-    """, unsafe_allow_html=True)
+    """, unsafe_allow_html=True
 
 # --- 2. CAMADA DE INFRAESTRUTURA (CONEXÕES HOSTGATOR) ---
 
