@@ -18,16 +18,9 @@ st.set_page_config(
 # CSS Customizado para ajustes de Layout e Login
 st.markdown("""
     <style>
-    /* Remove o retângulo e o espaço no topo */
-    .stAppHeader { display: none !important; }
-    .block-container { padding-top: 0rem !important; }
-    
-    header { visibility: hidden; }
-    .card-tempo { background-color: #1e1e1e; border: 1px solid #333; border-radius: 12px; padding: 15px; text-align: center; margin-bottom: 15px; }
-    .stButton button { width: 100%; border-radius: 10px; height: 3.5em; font-weight: bold; }
-    .login-box { max-width: 400px; margin: 0 auto; padding: 2rem; border: 1px solid #333; border-radius: 15px; background-color: #0e1117; }
-    </style>
-    """, unsafe_allow_html=True)
+    /* Ajuste 1: Remove o retângulo branco no topo */
+    .stAppHeader { background: transparent; }
+    header {visibility: hidden;}
     
     /* Cards de tempo no Dashboard */
     .card-tempo { 
