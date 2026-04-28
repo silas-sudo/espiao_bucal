@@ -6,6 +6,7 @@ from datetime import datetime
 from PIL import Image
 import io
 import os
+import pytz
 
 # --- 1. CONFIGURAÇÕES DE INTERFACE ---
 st.set_page_config(
@@ -51,7 +52,26 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. CONEXÕES ---
+# --- 2. FUNÇÃO PARA HORÁRIO DE BRASÍLIA ---
+def obter_horario_brasilia():
+    """Retorna a data/hora atual no fuso horário de Brasília"""
+    fuso_brasilia = pytz.timezone('America/Sao_Paulo')
+    agora_utc = datetime.now(pytz.UTC)
+    agora_brasilia = agora_utc.astimezone(fuso_brasilia)
+    return agora_brasilia
+
+def formatar_hora_brasilia(data_hora):
+    """Formata a data/hora para exibição no horário de Brasília"""
+    if isinstance(data_hora, str):
+        data_hora = datetime.fromisoformat(data_hora.replace('Z', '+00:00'))
+    
+    if data_hora.tzinfo is None:
+        fuso_brasilia = pytz.timezone('America/Sao_Paulo')
+        data_hora = pytz.UTC.localize(data_hora).astimezone(fuso_brasilia)
+    
+    return data_hora
+
+# --- 3. CONEXÕES ---
 def conectar_bd():
     try:
         c = st.secrets["mysql"]
@@ -61,7 +81,8 @@ def conectar_bd():
             database=c["database"],
             user=c["user"], 
             password=c["password"], 
-            autocommit=True
+            autocommit=True,
+            time_zone='America/Sao_Paulo'  # Força timezone na conexão
         )
         return conn
     except Exception as e:
@@ -99,15 +120,14 @@ def gerenciar_ftp(acao, nome_arquivo=None, foto_buffer=None):
             st.error(f"Erro FTP: {e}")
         return None
 
-# --- 3. SESSÃO ---
+# --- 4. SESSÃO ---
 if 'logado' not in st.session_state:
     st.session_state.logado = False
 if 'user_info' not in st.session_state:
     st.session_state.user_info = None
 
-# --- 4. TELA DE LOGIN (SEM DIV EXTRA) ---
+# --- 5. TELA DE LOGIN ---
 if not st.session_state.logado:
-    # Centraliza diretamente sem div extra
     _, col_login, _ = st.columns([1, 1.2, 1])
     
     with col_login:
@@ -133,10 +153,14 @@ if not st.session_state.logado:
                         st.error("Credenciais inválidas")
     st.stop()
 
-# --- 5. INTERFACE PRINCIPAL ---
+# --- 6. INTERFACE PRINCIPAL ---
 user = st.session_state.user_info
 st.sidebar.title(f"👤 {user['nome']}")
 st.sidebar.write(f"Nível: {user['perfil'].upper()}")
+
+# Exibe hora atual de Brasília no sidebar
+hora_atual = obter_horario_brasilia()
+st.sidebar.write(f"🕐 {hora_atual.strftime('%d/%m/%Y %H:%M:%S')} (Brasília)")
 
 if st.sidebar.button("Encerrar Sessão"):
     st.session_state.clear()
@@ -154,9 +178,13 @@ if menu == "📷 Meu Registro":
     db = conectar_bd()
     if db:
         cursor = db.cursor(dictionary=True)
-        cursor.execute("SELECT evento FROM registros WHERE usuario_id = %s ORDER BY data_hora DESC LIMIT 1", (user['id'],))
+        cursor.execute("SELECT evento, data_hora FROM registros WHERE usuario_id = %s ORDER BY data_hora DESC LIMIT 1", (user['id'],))
         ultimo = cursor.fetchone()
         db.close()
+        
+        # Converte a última data para horário de Brasília se existir
+        if ultimo and ultimo['data_hora']:
+            ultimo['data_hora'] = formatar_hora_brasilia(ultimo['data_hora'])
         
         proximo = "Check-out" if ultimo and ultimo['evento'] == "Check-in" else "Check-in"
         
@@ -167,7 +195,7 @@ if menu == "📷 Meu Registro":
             
             if st.button(f"Confirmar Registro de {proximo}", type="primary", use_container_width=True):
                 if foto:
-                    agora = datetime.now()
+                    agora = obter_horario_brasilia()  # Usa horário de Brasília
                     nome_f = f"{agora.strftime('%Y%m%d_%H%M%S')}_{user['id']}_{proximo.lower()}.jpg"
                     
                     with st.spinner("Enviando..."):
@@ -204,7 +232,9 @@ elif menu == "📊 Painel de Controle":
                 db.close()
                 st.rerun()
 
+            # Converte data_hora para horário de Brasília
             df['data_hora'] = pd.to_datetime(df['data_hora'])
+            df['data_hora'] = df['data_hora'].apply(formatar_hora_brasilia)
             df['dia'] = df['data_hora'].dt.date
             
             for usuario_n, grupo in df.groupby("nome"):
@@ -238,7 +268,9 @@ elif menu == "📊 Painel de Controle":
                     st.write("#### Detalhes")
                     for r in grupo.itertuples():
                         col1, col2, col3 = st.columns([3, 1, 1])
-                        col1.write(f"🔹 {r.data_hora.strftime('%d/%m %H:%M')} - {r.evento}")
+                        # Exibe horário formatado de Brasília
+                        hora_str = r.data_hora.strftime('%d/%m %H:%M:%S')
+                        col1.write(f"🔹 {hora_str} - {r.evento}")
                         
                         if col2.button("🗑️", key=f"del_{r.id}"):
                             gerenciar_ftp("deletar", r.nome_foto)
