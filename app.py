@@ -18,9 +18,34 @@ st.set_page_config(
 # CSS Customizado para ajustes de Layout e Login
 st.markdown("""
     <style>
-    /* Ajuste 1: Remove o retângulo branco no topo */
-    .stAppHeader { background: transparent; }
-    header {visibility: hidden;}
+    /* Remove completamente o cabeçalho padrão do Streamlit */
+    .stAppHeader {
+        display: none !important;
+        visibility: hidden !important;
+        background: transparent !important;
+    }
+    
+    /* Remove o header padrão e qualquer elemento fixo no topo */
+    header {
+        display: none !important;
+        visibility: hidden !important;
+        background: transparent !important;
+    }
+    
+    /* Remove o espaço reservado pelo header */
+    .stApp > header {
+        display: none !important;
+    }
+    
+    /* Ajusta o padding superior do conteúdo principal */
+    .main .block-container {
+        padding-top: 1rem !important;
+    }
+    
+    /* Remove qualquer borda ou sombra superior */
+    .stApp {
+        border-top: none !important;
+    }
     
     /* Cards de tempo no Dashboard */
     .card-tempo { 
@@ -42,6 +67,16 @@ st.markdown("""
     
     /* Box de Login Centralizado */
     .login-box { 
+        max-width: 400px; 
+        margin: 0 auto; 
+        padding: 2.5rem; 
+        border: 1px solid #333; 
+        border-radius: 15px; 
+        background-color: #0e1117; 
+        box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+    }
+    </style>
+    """, unsafe_allow_html=True)
         max-width: 400px; 
         margin: 0 auto; 
         padding: 2.5rem; 
