@@ -15,33 +15,24 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# CSS Customizado Estabilizado - REMOVE O TOPO SEM QUEBRAR O LAYOUT
+# CSS Customizado para ajustes de Layout e Login
 st.markdown("""
     <style>
-    /* Ajuste 1: Esconde a barra superior e o menu padrão do Streamlit */
-    header, .stAppHeader, [data-testid="stHeader"] { 
-        display: none !important; 
-        visibility: hidden !important;
-    }
+    /* Ajuste 1: Remove o retângulo branco no topo */
+    .stAppHeader { background: transparent; }
+    header {visibility: hidden;}
     
-    /* Ajuste 2: Zera o padding do container para colar o conteúdo no topo de forma limpa */
-    .block-container { 
-        padding-top: 0rem !important; 
-        padding-bottom: 1rem !important;
-    }
-
-    /* Cards de tempo no Dashboard - Estilo Dark Moderno */
+    /* Cards de tempo no Dashboard */
     .card-tempo { 
         background-color: #1e1e1e; 
         border: 1px solid #333; 
         border-radius: 12px; 
         padding: 15px; 
         text-align: center; 
-        margin-bottom: 15px;
-        box-shadow: 2px 2px 10px rgba(0,0,0,0.3);
+        margin-bottom: 15px; 
     }
     
-    /* Botões padronizados e com altura fixa */
+    /* Botões padronizados */
     .stButton button { 
         width: 100%; 
         border-radius: 10px; 
@@ -49,7 +40,7 @@ st.markdown("""
         font-weight: bold; 
     }
     
-    /* Box de Login Centralizado e com Sombra */
+    /* Box de Login Centralizado */
     .login-box { 
         max-width: 400px; 
         margin: 0 auto; 
@@ -59,52 +50,39 @@ st.markdown("""
         background-color: #0e1117; 
         box-shadow: 0 4px 15px rgba(0,0,0,0.5);
     }
-
-    /* Remove espaçamentos extras entre os blocos verticais */
-    [data-testid="stVerticalBlock"] {
-        gap: 0.5rem;
-    }
     </style>
     """, unsafe_allow_html=True)
 
 # --- 2. CAMADA DE INFRAESTRUTURA (CONEXÕES HOSTGATOR) ---
 
 def conectar_bd():
-    """Gerencia conexão remota com MySQL de forma resiliente"""
+    """Gerencia conexão remota com MySQL"""
     try:
         c = st.secrets["mysql"]
         conn = mysql.connector.connect(
             host=c["host"], 
-            port=c.get("port", 3306), 
+            port=c["port"], 
             database=c["database"],
             user=c["user"], 
             password=c["password"], 
             autocommit=True
         )
-        if conn.is_connected():
-            return conn
-    except mysql.connector.Error as err:
-        st.error(f"Falha na Conexão com o Banco de Dados: {err}")
+        return conn
     except Exception as e:
-        st.error(f"Erro inesperado de Infraestrutura: {e}")
-    return None
+        st.error(f"Falha Crítica na Conexão com Banco: {e}")
+        return None
 
 def gerenciar_ftp(acao, nome_arquivo=None, foto_buffer=None):
-    """Lida com Sincronização de Arquivos no Servidor FTP Francotec"""
+    """Lida com Sincronização de Arquivos no Servidor"""
     try:
-        ftp_host = "69.49.241.31"
-        ftp_user = "espiao@francotec.com.br"
-        ftp_pass = "Helena@!*2026"
-        
-        ftp = ftplib.FTP(ftp_host)
-        ftp.login(ftp_user, ftp_pass)
+        ftp = ftplib.FTP("69.49.241.31")
+        ftp.login("espiao@francotec.com.br", "Helena@!*2026")
         ftp.set_pasv(True)
         
         resultado = None
         if acao == "upload":
             img = Image.open(foto_buffer)
-            if img.mode != 'RGB': 
-                img = img.convert('RGB')
+            if img.mode != 'RGB': img = img.convert('RGB')
             buf = io.BytesIO()
             img.save(buf, format="JPEG", quality=75)
             buf.seek(0)
@@ -118,16 +96,16 @@ def gerenciar_ftp(acao, nome_arquivo=None, foto_buffer=None):
             resultado = buf.getvalue()
             
         elif acao == "deletar":
-            # Exclusão física do arquivo para não ocupar espaço em disco
+            # Ajuste 3: Exclusão física do arquivo para não ocupar espaço
             ftp.delete(nome_arquivo)
             resultado = True
         
         ftp.quit()
         return resultado
     except Exception as e:
-        # Silenciamos erros de download se o arquivo for inexistente
+        # Silenciamos erros de download se o arquivo não existir, mas avisamos no upload
         if acao != "download":
-            st.error(f"Erro Crítico no Servidor de Arquivos (FTP): {e}")
+            st.error(f"Erro no Servidor de Arquivos (FTP): {e}")
         return None
 
 # --- 3. GESTÃO DE ESTADO DA SESSÃO ---
@@ -136,9 +114,9 @@ if 'logado' not in st.session_state:
 if 'user_info' not in st.session_state:
     st.session_state.user_info = None
 
-# --- 4. TELA DE LOGIN (ESTRUTURA CENTRALIZADA) ---
+# --- 4. TELA DE LOGIN (AJUSTE 1: CENTRALIZADA E LIMPA) ---
 if not st.session_state.logado:
-    st.write("") # Espaço vazio compensatório
+    st.write("") # Espaço vazio para compensar o topo
     _, col_login, _ = st.columns([1, 1.2, 1])
     
     with col_login:
@@ -153,8 +131,7 @@ if not st.session_state.logado:
                 db = conectar_bd()
                 if db:
                     cursor = db.cursor(dictionary=True)
-                    sql = "SELECT * FROM usuarios WHERE LOWER(usuario) = %s AND senha = %s"
-                    cursor.execute(sql, (u, p))
+                    cursor.execute("SELECT * FROM usuarios WHERE LOWER(usuario) = %s AND senha = %s", (u, p))
                     res = cursor.fetchone()
                     db.close()
                     
@@ -170,19 +147,19 @@ if not st.session_state.logado:
 # --- 5. INTERFACE PRINCIPAL LOGADA ---
 user = st.session_state.user_info
 st.sidebar.title(f"👤 {user['nome']}")
-st.sidebar.write(f"Nível de Acesso: **{user['perfil'].upper()}**")
+st.sidebar.write(f"Nível: {user['perfil'].upper()}")
 
-if st.sidebar.button("Encerrar Sessão", use_container_width=True):
+if st.sidebar.button("Encerrar Sessão"):
     st.session_state.clear()
     st.rerun()
 
-# Lógica de Menu por Perfil
+# Ajuste 2: Removido 'Meu Registro' para perfil Admin
 if user['perfil'] == 'admin':
     menu = st.sidebar.radio("Navegação", ["📊 Painel de Controle", "👥 Gestão de Usuários"])
 else:
     menu = "📷 Meu Registro"
 
-# --- MÓDULO: MEU REGISTRO (VISÃO PACIENTE) ---
+# --- MÓDULO: MEU REGISTRO (PACIENTES) ---
 if menu == "📷 Meu Registro":
     st.header("📸 Captura de Uso")
     
@@ -193,20 +170,19 @@ if menu == "📷 Meu Registro":
         ultimo = cursor.fetchone()
         db.close()
         
-        # Determina a próxima ação lógica
         proximo = "Check-out" if ultimo and ultimo['evento'] == "Check-in" else "Check-in"
         
         col_c, _ = st.columns([2, 1])
         with col_c:
             foto = st.camera_input("Capturar Foto", label_visibility="collapsed")
-            st.info(f"Status Atual Pendente: **{proximo}**")
+            st.info(f"Status Atual: **{proximo}**")
             
             if st.button(f"Confirmar Registro de {proximo}", type="primary"):
                 if foto:
                     agora = datetime.now()
                     nome_f = f"{agora.strftime('%Y%m%d_%H%M%S')}_{user['id']}_{proximo.lower()}.jpg"
                     
-                    with st.spinner("Enviando dados para o servidor..."):
+                    with st.spinner("Enviando dados..."):
                         if gerenciar_ftp("upload", nome_f, foto):
                             db = conectar_bd()
                             cur = db.cursor()
@@ -216,20 +192,21 @@ if menu == "📷 Meu Registro":
                             st.success("Sincronizado com Sucesso!")
                             st.rerun()
                 else:
-                    st.warning("Por favor, capture uma imagem para validar o registro.")
+                    st.warning("Por favor, capture uma imagem para validar.")
 
-# --- MÓDULO: PAINEL DE CONTROLE (VISÃO ADMIN) ---
+# --- MÓDULO: PAINEL DE CONTROLE (ADMIN) ---
 elif menu == "📊 Painel de Controle":
-    st.header("📊 Monitoramento de Monitoramento")
+    st.header("📊 Gestão de Monitoramento")
     
     db = conectar_bd()
     if db:
+        # Consulta avançada com Join
         query = "SELECT r.*, u.nome FROM registros r JOIN usuarios u ON r.usuario_id = u.id ORDER BY r.data_hora DESC"
         df = pd.read_sql(query, db)
         db.close()
 
         if not df.empty:
-            # Opção para zerar registros na sidebar
+            # Ajuste 3: Opção para zerar registros na sidebar
             if st.sidebar.button("🚨 Zerar Todos os Registros"):
                 db = conectar_bd()
                 cur = db.cursor()
@@ -245,9 +222,12 @@ elif menu == "📊 Painel de Controle":
             df['dia'] = df['data_hora'].dt.date
             
             for usuario_n, grupo in df.groupby("nome"):
+                # Ajuste 4: Soma de tempo exibida no Card do Usuário
                 with st.expander(f"👤 {usuario_n}", expanded=False):
-                    seg_total = 0; check_t = None; cards_data = []
+                    seg_total = 0; check_t = None
+                    cards_data = []
                     
+                    # Ordenar por data para cálculo correto
                     grupo_ord = grupo.sort_values('data_hora')
                     for r in grupo_ord.itertuples():
                         if r.evento == "Check-in":
@@ -262,11 +242,13 @@ elif menu == "📊 Painel de Controle":
                     h_t = int(seg_total // 3600); m_t = int((seg_total % 3600) // 60)
                     st.subheader(f"⏱️ Tempo Total Acumulado: {h_t}h {m_t}m")
                     
+                    # Exibição de cards
                     c_cols = st.columns(4)
                     for i, card in enumerate(cards_data):
                         with c_cols[i % 4]:
                             st.markdown(f"<div class='card-tempo'><small>{card['dia'].strftime('%d/%m')}</small><br><b>{card['tempo']}</b></div>", unsafe_allow_html=True)
 
+                    # Tabela detalhada com opção de exclusão (Ajuste 3)
                     st.write("#### Detalhamento de Fotos e Eventos")
                     for r in grupo.itertuples():
                         col1, col2, col3 = st.columns([3, 1, 1])
@@ -290,17 +272,19 @@ elif menu == "👥 Gestão de Usuários":
     st.header("👥 Administração de Contas")
     db = conectar_bd()
     
+    # Novo Cadastro
     with st.expander("➕ Cadastrar Novo Usuário/Paciente"):
         with st.form("cad_user"):
             n = st.text_input("Nome Completo")
-            u_cad = st.text_input("Login/Usuário").lower().strip()
-            s_cad = st.text_input("Senha")
-            p_cad = st.selectbox("Nível de Acesso", ["user", "admin"])
+            u = st.text_input("Login/Usuário").lower().strip() # Ajuste 4
+            s = st.text_input("Senha")
+            p = st.selectbox("Nível de Acesso", ["user", "admin"])
             if st.form_submit_button("Salvar Cadastro"):
                 cur = db.cursor()
-                cur.execute("INSERT INTO usuarios (nome, usuario, senha, perfil) VALUES (%s,%s,%s,%s)", (n,u_cad,s_cad,p_cad))
+                cur.execute("INSERT INTO usuarios (nome, usuario, senha, perfil) VALUES (%s,%s,%s,%s)", (n,u,s,p))
                 st.rerun()
 
+    # Listagem para Edição (Ajuste 4: Incluindo campo Usuário)
     u_df = pd.read_sql("SELECT * FROM usuarios", db)
     for row in u_df.itertuples():
         with st.expander(f"👤 {row.nome} (Login: {row.usuario})"):
