@@ -18,9 +18,9 @@ st.set_page_config(
 # CSS Customizado para ajustes de Layout e Login
 st.markdown("""
     <style>
-    /* Ajuste 1: Remove o retângulo branco no topo */
-    .stAppHeader { background: transparent; }
-    header {visibility: hidden;}
+    /* Remove a barra superior e o preenchimento extra no topo */
+.stAppHeader { display: none !important; }
+.block-container { padding-top: 0rem !important; }
     
     /* Cards de tempo no Dashboard */
     .card-tempo { 
