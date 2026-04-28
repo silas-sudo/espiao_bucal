@@ -19,7 +19,7 @@ st.set_page_config(
 
 # CSS Customizado
 st.markdown("""
-<style>
+<style
 /* Remove cabeçalho padrão */
 .stAppHeader, header, .stApp > header, [data-testid="stHeader"], [data-testid="stToolbar"] {
     display: none !important;
@@ -59,17 +59,6 @@ def obter_horario_brasilia():
     agora_utc = datetime.now(pytz.UTC)
     agora_brasilia = agora_utc.astimezone(fuso_brasilia)
     return agora_brasilia
-
-def formatar_hora_brasilia(data_hora):
-    """Formata a data/hora para exibição no horário de Brasília"""
-    if isinstance(data_hora, str):
-        data_hora = datetime.fromisoformat(data_hora.replace('Z', '+00:00'))
-    
-    if data_hora.tzinfo is None:
-        fuso_brasilia = pytz.timezone('America/Sao_Paulo')
-        data_hora = pytz.UTC.localize(data_hora).astimezone(fuso_brasilia)
-    
-    return data_hora
 
 # --- 3. CONEXÕES ---
 def conectar_bd():
@@ -181,11 +170,6 @@ if menu == "📷 Meu Registro":
         ultimo = cursor.fetchone()
         db.close()
         
-        # Converte a última data para horário de Brasília se existir
-        if ultimo and ultimo['data_hora']:
-            if isinstance(ultimo['data_hora'], str):
-                ultimo['data_hora'] = datetime.fromisoformat(ultimo['data_hora'])
-        
         proximo = "Check-out" if ultimo and ultimo['evento'] == "Check-in" else "Check-in"
         
         col_c, _ = st.columns([2, 1])
@@ -207,7 +191,7 @@ if menu == "📷 Meu Registro":
                             db = conectar_bd()
                             cur = db.cursor()
                             
-                            # Salva como string no formato ISO para evitar conversão automática do MySQL
+                            # Salva como string no formato ISO
                             data_hora_str = agora.strftime('%Y-%m-%d %H:%M:%S')
                             sql = "INSERT INTO registros (data_hora, evento, nome_foto, usuario_id) VALUES (%s, %s, %s, %s)"
                             cur.execute(sql, (data_hora_str, proximo, nome_f, user['id']))
@@ -239,28 +223,36 @@ elif menu == "📊 Painel de Controle":
                 db.close()
                 st.rerun()
 
-            # Converte data_hora para datetime se for string
+            # CORREÇÃO: Converte data_hora para datetime de forma segura
+            # Verifica se a coluna é string e converte
             if df['data_hora'].dtype == 'object':
-                df['data_hora'] = pd.to_datetime(df['data_hora'])
+                df['data_hora'] = pd.to_datetime(df['data_hora'], errors='coerce')
             
+            # Remove linhas com data inválida
+            df = df.dropna(subset=['data_hora'])
+            
+            # Extrai a data para agrupamento
             df['dia'] = df['data_hora'].dt.date
             
+            # Agrupa por usuário
             for usuario_n, grupo in df.groupby("nome"):
                 with st.expander(f"👤 {usuario_n}", expanded=False):
                     seg_total = 0
                     check_t = None
                     cards_data = []
                     
+                    # Ordena por data_hora
                     grupo_ord = grupo.sort_values('data_hora')
-                    for r in grupo_ord.itertuples():
-                        if r.evento == "Check-in":
-                            check_t = r.data_hora
-                        elif r.evento == "Check-out" and check_t:
-                            diff = (r.data_hora - check_t).total_seconds()
+                    
+                    for idx, row in grupo_ord.iterrows():
+                        if row['evento'] == "Check-in":
+                            check_t = row['data_hora']
+                        elif row['evento'] == "Check-out" and check_t:
+                            diff = (row['data_hora'] - check_t).total_seconds()
                             seg_total += diff
                             h_c = int(diff // 3600)
                             m_c = int((diff % 3600) // 60)
-                            cards_data.append({"dia": r.dia, "tempo": f"{h_c}h {m_c}m"})
+                            cards_data.append({"dia": row['dia'], "tempo": f"{h_c}h {m_c}m"})
                             check_t = None
                     
                     h_t = int(seg_total // 3600)
@@ -269,32 +261,28 @@ elif menu == "📊 Painel de Controle":
                     
                     if cards_data:
                         st.write("#### Resumo por Dia")
-                        c_cols = st.columns(4)
+                        c_cols = st.columns(min(4, len(cards_data)))
                         for i, card in enumerate(cards_data):
-                            with c_cols[i % 4]:
+                            with c_cols[i % len(c_cols)]:
                                 st.markdown(f"<div class='card-tempo'><small>{card['dia'].strftime('%d/%m/%Y')}</small><br><b>{card['tempo']}</b></div>", unsafe_allow_html=True)
 
                     st.write("#### Detalhamento dos Registros")
-                    for r in grupo.itertuples():
+                    for idx, row in grupo_ord.iterrows():
                         col1, col2, col3 = st.columns([3, 1, 1])
                         # Formata a data/hora para exibição
-                        if isinstance(r.data_hora, str):
-                            data_obj = datetime.fromisoformat(r.data_hora)
-                        else:
-                            data_obj = r.data_hora
-                        hora_str = data_obj.strftime('%d/%m/%Y %H:%M:%S')
-                        col1.write(f"🔹 {hora_str} - {r.evento}")
+                        hora_str = row['data_hora'].strftime('%d/%m/%Y %H:%M:%S')
+                        col1.write(f"🔹 {hora_str} - {row['evento']}")
                         
-                        if col2.button("🗑️ Apagar", key=f"del_{r.id}"):
-                            gerenciar_ftp("deletar", r.nome_foto)
+                        if col2.button("🗑️ Apagar", key=f"del_{row['id']}"):
+                            gerenciar_ftp("deletar", row['nome_foto'])
                             db = conectar_bd()
                             cur = db.cursor()
-                            cur.execute("DELETE FROM registros WHERE id=%s", (r.id,))
+                            cur.execute("DELETE FROM registros WHERE id=%s", (row['id'],))
                             db.close()
                             st.rerun()
                             
-                        if col3.toggle("🖼️ Ver Foto", key=f"img_{r.id}"):
-                            img_bin = gerenciar_ftp("download", r.nome_foto)
+                        if col3.toggle("🖼️ Ver Foto", key=f"img_{row['id']}"):
+                            img_bin = gerenciar_ftp("download", row['nome_foto'])
                             if img_bin:
                                 st.image(img_bin, use_container_width=True)
         else:
